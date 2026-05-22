@@ -25,7 +25,11 @@ input,select,textarea{font-family:inherit;background:none;border:none;color:inhe
 #auth-screen{
   position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
   background:var(--bg);z-index:9999;
+  transition:opacity 0.45s ease;
 }
+
+/* ── HIDDEN UTILITY (used by modal) ── */
+.hidden{display:none!important}
 .auth-card{
   width:100%;max-width:380px;margin:20px;
   background:rgba(18,18,28,0.98);border:1px solid var(--border);
@@ -325,16 +329,22 @@ function toast(msg, dur = 3000) {
 
 // ── AUTH ──
 document.getElementById('auth-btn').onclick = () => {
-  const pw = document.getElementById('auth-pw').value;
+  const pw = document.getElementById('auth-pw').value.trim();
   const err = document.getElementById('auth-err');
   if (pw === ADMIN_PASSWORD) {
-    document.getElementById('auth-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
-    document.getElementById('app').style.flexDirection = 'column';
+    const authScr = document.getElementById('auth-screen');
+    const appEl   = document.getElementById('app');
+    authScr.style.opacity = '0';
+    authScr.style.transition = 'opacity 0.4s';
+    setTimeout(() => {
+      authScr.style.display = 'none';
+      appEl.style.cssText = 'display:flex;flex-direction:column;min-height:100vh;';
+    }, 380);
     _init();
   } else {
     err.textContent = '❌ Wrong password';
-    setTimeout(() => err.textContent = '', 2000);
+    document.getElementById('auth-pw').value = '';
+    setTimeout(() => err.textContent = '', 2500);
   }
 };
 document.getElementById('auth-pw').addEventListener('keydown', e => {
@@ -483,57 +493,120 @@ function _drawPlayersTable(el, players) {
 }
 
 async function toggleBan(tid, isBanned) {
-  if (!confirm(`${isBanned ? 'Unban' : 'Ban'} player #${tid}?`)) return;
+  // Normalize — onclick attrs may pass boolean or string
+  const banned = isBanned === true || isBanned === 'true';
+  if (!confirm(`${banned ? 'Unban' : 'Ban'} player #${tid}?`)) return;
   try {
-    await _sb.from('players').update({ is_banned: !isBanned }).eq('telegram_id', String(tid));
-    await _sb.from('admin_logs').insert({ action: isBanned ? 'unban' : 'ban', target_id: String(tid), created_at: new Date().toISOString() }).catch(()=>{});
-    toast(isBanned ? `✅ Unbanned #${tid}` : `🚫 Banned #${tid}`);
+    const { error } = await _sb.from('players').update({ is_banned: !banned }).eq('telegram_id', String(tid));
+    if (error) throw error;
+    // Log the action — ignore if admin_logs table not yet created
+    await _sb.from('admin_logs').insert({ action: banned ? 'unban' : 'ban', target_id: String(tid), notes: null, created_at: new Date().toISOString() }).catch(()=>{});
+    toast(banned ? `✅ Unbanned #${tid}` : `🚫 Banned #${tid}`);
     await _renderPlayers(document.getElementById('tab-content'));
-  } catch(e) { toast('⚠️ Failed: ' + e.message); }
+  } catch(e) { toast('⚠️ Ban/Unban failed: ' + e.message); }
 }
 
 async function viewPlayer(tid) {
-  const { data: p } = await _sb.from('players').select('*').eq('telegram_id', String(tid)).single();
-  const { data: runs } = await _sb.from('run_logs').select('*').eq('telegram_id', String(tid)).order('created_at', { ascending: false }).limit(20);
+  const [{ data: p }, { data: runs }, { data: refs }] = await Promise.all([
+    _sb.from('players').select('*').eq('telegram_id', String(tid)).single(),
+    _sb.from('run_logs').select('*').eq('telegram_id', String(tid)).order('created_at', { ascending: false }).limit(30),
+    _sb.from('referrals').select('referred_id,created_at').eq('referrer_id', String(tid)).order('created_at', { ascending: false }).limit(20),
+  ]);
   if (!p) { toast('Player not found'); return; }
-  openModal(`👤 ${p.username || 'Unknown'} (#${p.telegram_id})`, `
-    <div class="json-pre">${JSON.stringify({
-      telegram_id: p.telegram_id,
-      username: p.username,
-      display_name: p.display_name,
-      best_score: p.best_score,
-      best_distance: p.best_distance,
-      total_runs: p.total_runs,
-      total_coins_earned: p.total_coins,
-      current_eggs: p.coins,
-      referral_count: p.referral_count,
-      total_play_time_sec: p.total_play_time,
-      wallet_address: p.wallet_address || null,
-      owned_characters: p.owned_characters,
-      equipped_character: p.equipped_character,
-      is_banned: p.is_banned,
-      captcha_done: p.captcha_done,
-      last_seen: p.last_seen,
-    }, null, 2)}</div>
-    <button class="copy-json-btn" onclick="navigator.clipboard?.writeText(this.previousElementSibling.textContent).then(()=>toast('✅ Copied!'))">📋 Copy JSON</button>
-    <div style="margin-top:16px;font-family:var(--fd);font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:10px">Last ${(runs||[]).length} Runs</div>
+
+  const playHours = ((p.total_play_time || 0) / 3600).toFixed(1);
+  const avgScore  = p.total_runs ? Math.round((runs||[]).reduce((s,r)=>s+(r.score||0),0) / Math.min((runs||[]).length,1)) : 0;
+  const wallet    = p.wallet_address || '—';
+  const shortWallet = wallet !== '—' ? wallet.slice(0,6)+'...'+wallet.slice(-4) : '—';
+
+  openModal(`👤 ${p.username || 'Unknown'} · #${p.telegram_id}`, `
+    <!-- Profile header -->
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;padding:14px;background:var(--glass);border-radius:var(--r2)">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--gold-dim);border:2px solid var(--gold-border);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">
+        ${p.photo_url ? `<img src="${p.photo_url}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.outerHTML='👤'"/>` : '👤'}
+      </div>
+      <div>
+        <div style="font-family:var(--fd);font-weight:800;font-size:1rem">${p.display_name || p.username || 'Unknown'}</div>
+        <div style="font-size:.75rem;color:var(--txt2)">@${p.username || '—'} · #${p.telegram_id}</div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          ${p.is_banned ? '<span class="badge badge-red">Banned</span>' : '<span class="badge badge-green">Active</span>'}
+          ${p.wallet_address ? '<span class="badge badge-gold">Wallet ✓</span>' : '<span class="badge badge-gray">No Wallet</span>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+      ${[
+        ['Best Score', (p.best_score||0).toLocaleString()],
+        ['Best Dist', (p.best_distance||0)+'m'],
+        ['Total Runs', (p.total_runs||0)],
+        ['Eggs Earned', (p.total_coins||0).toLocaleString()],
+        ['Eggs Now', (p.coins||0).toLocaleString()],
+        ['Play Time', playHours+'h'],
+        ['Referrals', p.referral_count||0],
+        ['Character', p.equipped_character||'—'],
+        ['Language', p.language_code||'—'],
+      ].map(([l,v]) => `<div style="background:var(--glass);border-radius:var(--r);padding:10px;text-align:center">
+        <div style="font-size:.6rem;color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">${l}</div>
+        <div style="font-family:var(--fd);font-weight:800;font-size:.88rem">${v}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Wallet -->
+    <div style="background:var(--glass);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:.65rem;color:var(--txt3);font-weight:700;letter-spacing:.08em">SOL WALLET</div>
+        <div style="font-family:monospace;font-size:.82rem;color:${p.wallet_address?'var(--gold)':'var(--txt3)'};margin-top:3px">${wallet}</div>
+      </div>
+      ${p.wallet_address ? `<button class="action-btn view-btn" onclick="navigator.clipboard?.writeText('${p.wallet_address}').then(()=>toast('✅ Wallet copied!'))">Copy</button>` : ''}
+    </div>
+
+    <!-- Last seen / joined -->
+    <div style="font-size:.72rem;color:var(--txt3);margin-bottom:14px">
+      Last seen: ${p.last_seen ? new Date(p.last_seen).toLocaleString() : '—'} · 
+      Captcha: ${p.captcha_done ? '✓' : '✗'}
+    </div>
+
+    <!-- JSON export -->
+    <details style="margin-bottom:14px">
+      <summary style="font-size:.78rem;color:var(--txt2);cursor:pointer;margin-bottom:6px">Raw JSON</summary>
+      <div class="json-pre">${JSON.stringify(p, null, 2)}</div>
+      <button class="copy-json-btn" onclick="navigator.clipboard?.writeText(JSON.stringify(${JSON.stringify(p)},null,2)).then(()=>toast('✅ JSON copied!'))">📋 Copy JSON</button>
+    </details>
+
+    <!-- Run history -->
+    <div style="font-family:var(--fd);font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:10px">
+      Run History (last ${(runs||[]).length})
+    </div>
     <div class="log-list">
       ${(runs||[]).map(r => `
         <div class="log-item ${r.suspicious?'suspicious':'normal'}">
           <div class="log-top">
-            <span class="log-id">Score: ${(r.score||0).toLocaleString()} · Dist: ${r.distance}m · Eggs: ${r.coins} · ${r.duration}s</span>
+            <span class="log-id">Score: ${(r.score||0).toLocaleString()} · ${r.distance||0}m · ${r.coins||0} eggs · ${r.duration||0}s</span>
             <span class="log-time">${new Date(r.created_at).toLocaleString()}</span>
           </div>
-          ${r.suspicious ? `<div class="log-flags">⚠️ Flags: ${(r.flags||[]).join(', ') || 'suspicious'}</div>` : ''}
-        </div>`).join('') || '<div style="color:var(--txt3);font-size:.82rem">No runs yet</div>'}
-    </div>`);
+          ${r.suspicious ? `<div class="log-flags">⚠️ ${(r.flags||[]).join(', ') || 'flagged'}</div>` : ''}
+        </div>`).join('') || '<div style="color:var(--txt3);font-size:.82rem;padding:10px 0">No runs yet</div>'}
+    </div>
+
+    ${(refs||[]).length ? `
+    <div style="font-family:var(--fd);font-size:.85rem;font-weight:700;color:var(--gold);margin:14px 0 10px">
+      Referred Users (${refs.length})
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${refs.map(r => `<div style="display:flex;justify-content:space-between;font-size:.75rem;background:var(--glass);padding:8px 12px;border-radius:var(--r)">
+        <span style="font-family:monospace">#${r.referred_id}</span>
+        <span style="color:var(--txt3)">${new Date(r.created_at).toLocaleDateString()}</span>
+      </div>`).join('')}
+    </div>` : ''}`);
 }
 
 // ── LOGS TAB ──
 async function _renderLogs(el) {
   const [{ data: allLogs }, { data: suspLogs }] = await Promise.all([
-    _sb.from('run_logs').select('*').order('created_at', { ascending: false }).limit(100),
-    _sb.from('run_logs').select('*').eq('suspicious', true).order('created_at', { ascending: false }).limit(50),
+    _sb.from('run_logs').select('*,players(username,display_name)').order('created_at', { ascending: false }).limit(100),
+    _sb.from('run_logs').select('*,players(username,display_name)').eq('suspicious', true).order('created_at', { ascending: false }).limit(50),
   ]);
 
   el.innerHTML = `
@@ -556,7 +629,7 @@ async function _renderLogs(el) {
               <span class="log-id">#${r.telegram_id}</span>
               <span class="log-time">${new Date(r.created_at).toLocaleString()}</span>
             </div>
-            <div class="log-stats">Score: ${(r.score||0).toLocaleString()} · Dist: ${r.distance}m · Eggs: ${r.coins} · ${r.duration}s</div>
+            <div class="log-stats">${r.players?.username||'#'+r.telegram_id} · Score: ${(r.score||0).toLocaleString()} · Dist: ${r.distance||0}m · Eggs: ${r.coins||0} · ${r.duration||0}s</div>
             <div class="log-flags">Flags: ${(r.flags||[]).join(', ') || '—'}</div>
           </div>`).join('')}
       </div>` : ''}
@@ -565,7 +638,7 @@ async function _renderLogs(el) {
       ${(allLogs||[]).map(r => `
         <div class="log-item ${r.suspicious?'suspicious':'normal'}">
           <div class="log-top">
-            <span class="log-id">#${r.telegram_id} · Score: ${(r.score||0).toLocaleString()} · ${r.distance}m · ${r.coins} eggs</span>
+            <span class="log-id">${r.players?.username||r.players?.display_name||'#'+r.telegram_id} · Score: ${(r.score||0).toLocaleString()} · ${r.distance||0}m · ${r.coins||0} eggs · ${r.duration||0}s</span>
             <span class="log-time">${new Date(r.created_at).toLocaleString()}</span>
           </div>
           ${r.suspicious ? `<div class="log-flags">⚠️ ${(r.flags||[]).join(', ')}</div>` : ''}
@@ -647,10 +720,17 @@ async function _renderSettings(el) {
       <h3>📊 Database Actions</h3>
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-label">Reset Weekly Leaderboard</div>
-          <div class="setting-desc">Clear all run_logs older than 7 days (weekly scores recalculate automatically)</div>
+          <div class="setting-label">Reset Weekly Scores</div>
+          <div class="setting-desc">Delete run_logs older than 7 days (manual only — no auto-reset)</div>
         </div>
-        <button class="action-btn ban-btn" onclick="resetWeekly()">Reset</button>
+        <button class="action-btn ban-btn" onclick="resetWeekly()">Reset Weekly</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label" style="color:var(--red)">⚠️ Full Leaderboard Reset</div>
+          <div class="setting-desc">Wipe ALL run_logs and reset all scores to 0. Cannot be undone.</div>
+        </div>
+        <button class="action-btn ban-btn" onclick="resetFullLeaderboard()">FULL RESET</button>
       </div>
       <div class="setting-row">
         <div class="setting-info">
@@ -686,7 +766,8 @@ async function _renderSettings(el) {
     btn.textContent = 'Saving…';
     try {
       const locked = document.getElementById('ref-lock-tog').checked;
-      await _sb.from('admin_settings').upsert({ key: 'referral_lock', value: String(locked), updated_at: new Date().toISOString() });
+      const { error: saveErr } = await _sb.from('admin_settings').upsert({ key: 'referral_lock', value: String(locked), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+      if (saveErr) throw saveErr;
       status.textContent = `✅ Saved — Referral lock is now ${locked ? 'ON (locked)' : 'OFF (unlocked)'}`;
       toast(`✅ Referral lock ${locked ? 'enabled' : 'disabled'}`);
       setTimeout(() => _renderSettings(el), 800);
@@ -701,12 +782,33 @@ async function _renderSettings(el) {
 }
 
 async function resetWeekly() {
-  if (!confirm('Reset weekly leaderboard? This deletes run_logs older than 7 days.')) return;
+  if (!confirm('Delete run_logs older than 7 days? This clears weekly scores.')) return;
   try {
     const weekAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
-    await _sb.from('run_logs').delete().lt('created_at', weekAgo);
-    toast('✅ Weekly leaderboard reset');
+    const { error } = await _sb.from('run_logs').delete().lt('created_at', weekAgo);
+    if (error) throw error;
+    toast('✅ Weekly run logs cleared');
+    if (_activeTab === 'logs') _loadTab('logs');
   } catch(e) { toast('⚠️ Failed: ' + e.message); }
+}
+
+async function resetFullLeaderboard() {
+  if (!confirm('⚠️ FULL RESET: Delete ALL run_logs and reset ALL player scores to 0? This cannot be undone!')) return;
+  if (!confirm('Are you 100% sure? This wipes the entire leaderboard.')) return;
+  try {
+    await _sb.from('run_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await _sb.from('players').update({ best_score: 0, best_distance: 0, total_runs: 0 }).neq('telegram_id','0');
+    toast('✅ Full leaderboard reset complete');
+    if (_activeTab === 'overview') _loadTab('overview');
+  } catch(e) { toast('⚠️ Failed: ' + e.message); }
+}
+
+async function clearSuspicious(logId) {
+  try {
+    await _sb.from('run_logs').update({ suspicious: false, flags: [] }).eq('id', logId);
+    toast('✅ Flag cleared');
+    _loadTab('logs');
+  } catch(e) { toast('⚠️ ' + e.message); }
 }
 
 async function exportPlayers() {
@@ -733,7 +835,9 @@ function closeModal() { document.getElementById('modal').classList.add('hidden')
 window.toggleBan = toggleBan;
 window.viewPlayer = viewPlayer;
 window.resetWeekly = resetWeekly;
+window.resetFullLeaderboard = resetFullLeaderboard;
 window.exportPlayers = exportPlayers;
+window.clearSuspicious = clearSuspicious;
 window.closeModal = closeModal;
 window.openModal = openModal;
 </script>
