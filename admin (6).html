@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ECHICK Admin Panel</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --gold:#F5C842;--orange:#FF8C42;--bg:#0d0d14;--bg2:#13131e;
+  --glass:rgba(255,255,255,0.06);--border:rgba(255,255,255,0.1);
+  --txt:#f2f2f8;--txt2:rgba(242,242,248,0.6);--txt3:rgba(242,242,248,0.32);
+  --green:#4ade80;--red:#f87171;--blue:#60a5fa;
+  --r:12px;--r2:18px;--r3:24px;
+  --fd:'Syne',sans-serif;--fb:'Plus Jakarta Sans',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--fb);background:var(--bg);color:var(--txt);min-height:100vh;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit;background:none;border:none;color:inherit;outline:none}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:99px}
+
+/* ── AUTH ── */
+#auth-screen{
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:var(--bg);z-index:9999;
+  transition:opacity 0.45s ease;
+}
+
+/* ── HIDDEN UTILITY (used by modal) ── */
+.hidden{display:none!important}
+.auth-card{
+  width:100%;max-width:380px;margin:20px;
+  background:rgba(18,18,28,0.98);border:1px solid var(--border);
+  border-radius:var(--r3);padding:36px 28px;
+  display:flex;flex-direction:column;align-items:center;gap:18px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.6);
+}
+.auth-logo{font-size:3rem;animation:bob 2s ease-in-out infinite alternate}
+@keyframes bob{from{transform:translateY(0) rotate(-5deg)}to{transform:translateY(-8px) rotate(5deg)}}
+.auth-title{font-family:var(--fd);font-size:1.5rem;font-weight:800;text-align:center}
+.auth-sub{font-size:.82rem;color:var(--txt2);text-align:center}
+.auth-input{
+  width:100%;height:46px;background:rgba(255,255,255,0.06);
+  border:1px solid var(--border);border-radius:var(--r);
+  padding:0 16px;font-size:.9rem;color:var(--txt);
+  transition:border-color .2s;
+}
+.auth-input:focus{border-color:rgba(245,200,66,.4)}
+.auth-input::placeholder{color:var(--txt3)}
+.auth-btn{
+  width:100%;height:48px;border-radius:999px;
+  background:linear-gradient(135deg,#f5c842,#ff8c42);
+  color:#09090f;font-family:var(--fd);font-weight:800;font-size:.95rem;
+  letter-spacing:.04em;cursor:pointer;
+  box-shadow:0 4px 18px rgba(245,200,66,.3);
+  transition:transform .15s,opacity .15s;
+}
+.auth-btn:active{transform:scale(.96)}
+.auth-err{font-size:.8rem;color:var(--red);text-align:center;min-height:18px}
+
+/* ── LAYOUT ── */
+#app{display:none;min-height:100vh;flex-direction:column}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 24px;
+  background:rgba(18,18,28,0.95);border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:100;
+  backdrop-filter:blur(20px);
+}
+.topbar-logo{display:flex;align-items:center;gap:10px}
+.topbar-title{font-family:var(--fd);font-size:1.1rem;font-weight:800}
+.topbar-badge{
+  font-size:.68rem;font-weight:700;letter-spacing:.08em;color:var(--gold);
+  background:rgba(245,200,66,.12);border:1px solid rgba(245,200,66,.2);
+  border-radius:999px;padding:3px 10px;
+}
+.logout-btn{
+  height:32px;padding:0 14px;border-radius:999px;
+  background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.2);
+  color:var(--red);font-size:.78rem;font-weight:600;cursor:pointer;
+  transition:transform .15s;
+}
+.logout-btn:active{transform:scale(.94)}
+
+/* ── NAV TABS ── */
+.nav-tabs{
+  display:flex;gap:4px;padding:16px 24px 0;
+  border-bottom:1px solid var(--border);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
+}
+.nav-tabs::-webkit-scrollbar{display:none}
+.ntab{
+  flex-shrink:0;height:38px;padding:0 16px;
+  border-radius:8px 8px 0 0;
+  font-family:var(--fd);font-size:.75rem;font-weight:700;letter-spacing:.04em;
+  color:var(--txt3);cursor:pointer;
+  border-bottom:2px solid transparent;
+  transition:color .2s,border-color .2s;white-space:nowrap;
+}
+.ntab.active{color:var(--gold);border-bottom-color:var(--gold)}
+
+/* ── CONTENT AREA ── */
+.content{padding:24px;max-width:1100px;margin:0 auto;width:100%}
+
+/* ── STATS CARDS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{
+  background:var(--glass);border:1px solid var(--border);
+  border-radius:var(--r2);padding:16px;
+}
+.stat-card-label{font-size:.65rem;font-weight:700;letter-spacing:.1em;color:var(--txt3);text-transform:uppercase;margin-bottom:6px}
+.stat-card-val{font-family:var(--fd);font-size:1.6rem;font-weight:800;color:var(--txt)}
+.stat-card-sub{font-size:.72rem;color:var(--txt2);margin-top:3px}
+
+/* ── SETTINGS PANEL ── */
+.settings-panel{
+  background:var(--glass);border:1px solid var(--border);
+  border-radius:var(--r2);padding:20px;margin-bottom:20px;
+}
+.settings-panel h3{font-family:var(--fd);font-size:1rem;font-weight:700;margin-bottom:16px;color:var(--gold)}
+.setting-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 0;border-bottom:1px solid rgba(255,255,255,.05);gap:16px;
+}
+.setting-row:last-child{border-bottom:none}
+.setting-info{flex:1}
+.setting-label{font-weight:600;font-size:.88rem}
+.setting-desc{font-size:.72rem;color:var(--txt3);margin-top:2px}
+/* iOS toggle */
+.tog{position:relative;display:inline-block;width:50px;height:28px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0}
+.tog-track{position:absolute;inset:0;background:rgba(255,255,255,.1);border:1px solid var(--border);border-radius:999px;cursor:pointer;transition:background .25s}
+.tog input:checked~.tog-track{background:rgba(74,222,128,.2);border-color:rgba(74,222,128,.35)}
+.tog-thumb{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--txt3);transition:transform .3s cubic-bezier(.34,1.56,.64,1),background .25s;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.tog input:checked~.tog-track .tog-thumb{transform:translateX(22px);background:var(--green)}
+.save-btn{
+  height:40px;padding:0 20px;border-radius:999px;
+  background:linear-gradient(135deg,var(--gold),var(--orange));
+  color:#09090f;font-family:var(--fd);font-weight:700;font-size:.82rem;
+  cursor:pointer;margin-top:12px;
+  transition:transform .15s,opacity .15s;
+}
+.save-btn:active{transform:scale(.95)}
+.save-btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ── TABLE ── */
+.table-wrap{overflow-x:auto;border-radius:var(--r2);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{
+  padding:10px 14px;text-align:left;
+  font-family:var(--fd);font-size:.65rem;font-weight:700;letter-spacing:.08em;
+  color:var(--txt3);text-transform:uppercase;
+  background:rgba(255,255,255,.03);border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:700}
+.badge-green{background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.2)}
+.badge-red{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+.badge-gold{background:rgba(245,200,66,.12);color:var(--gold);border:1px solid rgba(245,200,66,.2)}
+.badge-gray{background:rgba(255,255,255,.06);color:var(--txt2);border:1px solid var(--border)}
+.action-btn{
+  height:26px;padding:0 10px;border-radius:999px;font-size:.7rem;font-weight:600;
+  cursor:pointer;transition:transform .15s;flex-shrink:0;
+}
+.action-btn:active{transform:scale(.92)}
+.ban-btn{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+.unban-btn{background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.2)}
+.view-btn{background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.2)}
+
+/* ── LOGS ── */
+.log-list{display:flex;flex-direction:column;gap:8px}
+.log-item{
+  background:var(--glass);border:1px solid var(--border);
+  border-radius:var(--r);padding:12px 14px;
+  border-left:3px solid var(--border);
+}
+.log-item.suspicious{border-left-color:var(--red)}
+.log-item.normal{border-left-color:var(--green)}
+.log-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.log-id{font-family:var(--fd);font-size:.8rem;font-weight:700;color:var(--txt)}
+.log-time{font-size:.68rem;color:var(--txt3)}
+.log-stats{font-size:.75rem;color:var(--txt2)}
+.log-flags{font-size:.68rem;color:var(--red);margin-top:4px}
+
+/* ── MODAL ── */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.75);
+  backdrop-filter:blur(8px);z-index:9000;
+  display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.modal-box{
+  background:rgba(18,18,28,.98);border:1px solid var(--border);
+  border-radius:var(--r3);padding:24px;width:100%;max-width:540px;
+  max-height:80vh;overflow-y:auto;
+  animation:slideUp .35s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes slideUp{from{transform:translateY(30px) scale(.96)}to{transform:none}}
+.modal-title{font-family:var(--fd);font-size:1.1rem;font-weight:800;margin-bottom:16px}
+.modal-close{float:right;font-size:1.1rem;cursor:pointer;color:var(--txt3);margin-left:10px;line-height:1}
+
+/* ── SEARCH ── */
+.search-row{display:flex;gap:10px;margin-bottom:16px;align-items:center}
+.search-input{
+  flex:1;height:38px;background:var(--glass);border:1px solid var(--border);
+  border-radius:var(--r);padding:0 14px;font-size:.85rem;color:var(--txt);
+}
+.search-input::placeholder{color:var(--txt3)}
+.filter-select{
+  height:38px;background:var(--glass);border:1px solid var(--border);
+  border-radius:var(--r);padding:0 12px;font-size:.82rem;color:var(--txt2);cursor:pointer;
+}
+
+/* ── JSON VIEWER ── */
+.json-pre{
+  background:rgba(0,0,0,.3);border:1px solid var(--border);
+  border-radius:var(--r);padding:14px;font-size:.72rem;font-family:monospace;
+  color:var(--txt2);white-space:pre-wrap;word-break:break-all;
+  max-height:400px;overflow-y:auto;
+}
+.copy-json-btn{
+  height:34px;padding:0 14px;border-radius:999px;margin-top:8px;
+  background:rgba(245,200,66,.12);border:1px solid rgba(245,200,66,.2);
+  color:var(--gold);font-size:.78rem;font-weight:600;cursor:pointer;
+}
+
+/* ── TOAST ── */
+#toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:rgba(20,20,30,.95);border:1px solid var(--border);border-radius:999px;
+  padding:10px 20px;font-size:.84rem;font-weight:500;
+  box-shadow:0 8px 30px rgba(0,0,0,.5);z-index:99999;opacity:0;white-space:nowrap;
+  transition:opacity .3s,transform .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── LOADING ── */
+.loading{text-align:center;padding:40px;color:var(--txt3);font-size:.9rem}
+.loading::after{content:'...';animation:dots 1.2s infinite}
+@keyframes dots{0%{content:''}33%{content:'.'}66%{content:'..'}100%{content:'...'}}
+
+/* ── EMPTY ── */
+.empty{text-align:center;padding:40px;color:var(--txt3)}
+.empty-icon{font-size:2.5rem;margin-bottom:8px}
+.empty-text{font-size:.88rem}
+
+@media(max-width:600px){
+  .content{padding:16px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  th,td{padding:8px 10px}
+}
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">🐓</div>
+    <div class="auth-title">ECHICK Admin</div>
+    <div class="auth-sub">Enter admin password to continue</div>
+    <input type="password" id="auth-pw" class="auth-input" placeholder="Password…" autocomplete="current-password"/>
+    <button class="auth-btn" id="auth-btn">Enter Panel</button>
+    <div class="auth-err" id="auth-err"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-logo">
+      <span style="font-size:1.5rem">🐓</span>
+      <span class="topbar-title">ECHICK Admin</span>
+      <span class="topbar-badge">$ECHICK</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span id="topbar-stats" style="font-size:.75rem;color:var(--txt3)"></span>
+      <button class="logout-btn" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="ntab active" data-tab="overview">Overview</button>
+    <button class="ntab" data-tab="players">Players</button>
+    <button class="ntab" data-tab="logs">Run Logs</button>
+    <button class="ntab" data-tab="referrals">Referrals</button>
+    <button class="ntab" data-tab="settings">Settings</button>
+  </div>
+
+  <div class="content" id="tab-content"></div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay hidden" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-title"></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const SUPABASE_URL  = 'https://vfxuxtisuhkrwxphsble.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmeHV4dGlzdWhrcnd4cGhzYmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2ODUyNzMsImV4cCI6MjA5NDI2MTI3M30.dh3nGIZiwCfgK_h2YHBtl_RAPnYPXQ3h2LrCvr6CFqs';
+const ADMIN_PASSWORD = 'Elonbelovedgetit';
+const WEBAPP_LINK    = 'https://t.me/elon_chickenbot/elon_chicken';
+
+let _sb = null;
+let _activeTab = 'overview';
+let _allPlayers = [];
+let _playerSearch = '';
+
+// ── TOAST ──
+let _toastT = null;
+function toast(msg, dur = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastT);
+  _toastT = setTimeout(() => el.classList.remove('show'), dur);
+}
+
+// ── AUTH ──
+document.getElementById('auth-btn').onclick = () => {
+  const pw = document.getElementById('auth-pw').value.trim();
+  const err = document.getElementById('auth-err');
+  if (pw === ADMIN_PASSWORD) {
+    const authScr = document.getElementById('auth-screen');
+    const appEl   = document.getElementById('app');
+    authScr.style.opacity = '0';
+    authScr.style.transition = 'opacity 0.4s';
+    setTimeout(() => {
+      authScr.style.display = 'none';
+      appEl.style.cssText = 'display:flex;flex-direction:column;min-height:100vh;';
+    }, 380);
+    _init();
+  } else {
+    err.textContent = '❌ Wrong password';
+    document.getElementById('auth-pw').value = '';
+    setTimeout(() => err.textContent = '', 2500);
+  }
+};
+document.getElementById('auth-pw').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('auth-btn').click();
+});
+document.getElementById('logout-btn').onclick = () => location.reload();
+
+// ── INIT ──
+async function _init() {
+  _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  _bindTabs();
+  await _loadTab('overview');
+}
+
+function _bindTabs() {
+  document.querySelectorAll('.ntab').forEach(btn => {
+    btn.onclick = async () => {
+      document.querySelectorAll('.ntab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _activeTab = btn.dataset.tab;
+      await _loadTab(_activeTab);
+    };
+  });
+}
+
+async function _loadTab(tab) {
+  const content = document.getElementById('tab-content');
+  content.innerHTML = '<div class="loading">Loading</div>';
+  try {
+    if      (tab === 'overview')  await _renderOverview(content);
+    else if (tab === 'players')   await _renderPlayers(content);
+    else if (tab === 'logs')      await _renderLogs(content);
+    else if (tab === 'referrals') await _renderReferrals(content);
+    else if (tab === 'settings')  await _renderSettings(content);
+  } catch(e) {
+    content.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Error: ${e.message}</div></div>`;
+  }
+}
+
+// ── OVERVIEW TAB ──
+async function _renderOverview(el) {
+  const [{ data: players, error: pErr }, { data: runs }] = await Promise.all([
+    _sb.from('players').select('*'),
+    _sb.from('run_logs').select('*').order('created_at', { ascending: false }).limit(200),
+  ]);
+  if (pErr) throw new Error('Cannot read players table: ' + pErr.message + '. Did you run supabase_schema.sql?');
+  _allPlayers = players || [];
+
+  const totalPlayers  = _allPlayers.length;
+  const totalBanned   = _allPlayers.filter(p => p.is_banned).length;
+  const totalRuns     = _allPlayers.reduce((s, p) => s + (p.total_runs || 0), 0);
+  const totalEggs     = _allPlayers.reduce((s, p) => s + (p.total_coins || 0), 0);
+  const totalRefs     = _allPlayers.reduce((s, p) => s + (p.referral_count || 0), 0);
+  const totalWallets  = _allPlayers.filter(p => p.wallet_address).length;
+  const suspicious    = (runs || []).filter(r => r.suspicious).length;
+  const topScore      = _allPlayers.reduce((m,p) => Math.max(m, p.best_score||0), 0);
+  const topDist       = _allPlayers.reduce((m,p) => Math.max(m, p.best_distance||0), 0);
+  const totalPlayTime = Math.round(_allPlayers.reduce((s, p) => s + (p.total_play_time || 0), 0) / 3600);
+
+  document.getElementById('topbar-stats').textContent = `${totalPlayers} players · ${totalRuns} runs`;
+
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-card-label">Total Players</div><div class="stat-card-val">${totalPlayers.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Total Runs</div><div class="stat-card-val">${totalRuns.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Eggs Collected</div><div class="stat-card-val">${totalEggs.toLocaleString()}</div><div class="stat-card-sub">all time</div></div>
+      <div class="stat-card"><div class="stat-card-label">Total Referrals</div><div class="stat-card-val">${totalRefs.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Play Time</div><div class="stat-card-val">${totalPlayTime.toLocaleString()}h</div></div>
+      <div class="stat-card"><div class="stat-card-label">Wallets Linked</div><div class="stat-card-val">${totalWallets}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Banned</div><div class="stat-card-val" style="color:var(--red)">${totalBanned}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Suspicious Runs</div><div class="stat-card-val" style="color:var(--red)">${suspicious}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Top Score</div><div class="stat-card-val" style="color:var(--gold)">${topScore.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="stat-card-label">Top Distance</div><div class="stat-card-val" style="color:var(--gold)">${topDist.toLocaleString()}m</div></div>
+    </div>
+    <div style="background:var(--glass);border:1px solid var(--border);border-radius:var(--r2);padding:16px;margin-bottom:16px">
+      <div style="font-family:var(--fd);font-size:.9rem;font-weight:700;margin-bottom:12px;color:var(--gold)">Recent Activity (last 20 runs)</div>
+      <div id="recent-runs"></div>
+    </div>`;
+
+  const recentEl = document.getElementById('recent-runs');
+  const recent = (runs || []).slice(0, 20);
+  if (!recent.length) { recentEl.innerHTML = '<div class="empty-text">No runs yet</div>'; return; }
+  recentEl.innerHTML = recent.map(r => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:.8rem">
+      <span style="color:var(--txt2)">#${r.telegram_id}</span>
+      <span>Score: <strong>${(r.score||0).toLocaleString()}</strong></span>
+      <span>Dist: <strong>${r.distance||0}m</strong></span>
+      <span>Eggs: <strong>${r.coins||0}</strong></span>
+      <span>${r.suspicious ? '<span class="badge badge-red">⚠ Suspicious</span>' : '<span class="badge badge-green">Clean</span>'}</span>
+      <span style="color:var(--txt3)">${new Date(r.created_at).toLocaleString()}</span>
+    </div>`).join('');
+}
+
+// ── PLAYERS TAB ──
+async function _renderPlayers(el) {
+  const { data: players, error: pErr } = await _sb
+    .from('players').select('*').order('best_score', { ascending: false });
+  if (pErr) throw new Error('Cannot read players: ' + pErr.message);
+  _allPlayers = players || [];
+  _playerSearch = '';
+  _drawPlayersTable(el, _allPlayers);
+}
+
+function _drawPlayersTable(el, players) {
+  const filtered = _playerSearch
+    ? players.filter(p => (p.username || '').toLowerCase().includes(_playerSearch.toLowerCase()) ||
+        (p.telegram_id || '').toString().includes(_playerSearch))
+    : players;
+
+  el.innerHTML = `
+    <div class="search-row">
+      <input class="search-input" id="player-search" placeholder="Search username or ID…" value="${_playerSearch}"/>
+      <div style="font-size:.8rem;color:var(--txt3)">${filtered.length} / ${players.length} players</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>User</th><th>ID</th><th>Score</th><th>Dist</th><th>Runs</th>
+          <th>Eggs</th><th>Refs</th><th>Wallet</th><th>Status</th><th>Actions</th>
+        </tr></thead>
+        <tbody>
+          ${filtered.map(p => `
+            <tr>
+              <td><strong>${p.username || p.display_name || 'Unknown'}</strong></td>
+              <td style="color:var(--txt3);font-family:monospace">${p.telegram_id}</td>
+              <td style="color:var(--gold)">${(p.best_score||0).toLocaleString()}</td>
+              <td>${(p.best_distance||0)}m</td>
+              <td>${p.total_runs||0}</td>
+              <td>${(p.coins||0).toLocaleString()}</td>
+              <td>${p.referral_count||0}</td>
+              <td>${p.wallet_address ? `<span class="badge badge-green">✓</span>` : `<span class="badge badge-gray">—</span>`}</td>
+              <td>${p.is_banned ? '<span class="badge badge-red">Banned</span>' : '<span class="badge badge-green">Active</span>'}</td>
+              <td style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="action-btn view-btn" onclick="viewPlayer('${p.telegram_id}')">View</button>
+                <button class="action-btn" style="background:rgba(245,200,66,.12);color:var(--gold);border:1px solid rgba(245,200,66,.2)" onclick="editScore('${p.telegram_id}','${(p.username||p.display_name||'Unknown').replace(/'/g,"\\'")}',${p.best_score||0},${p.best_distance||0})">✏️ Score</button>
+                <button class="action-btn ${p.is_banned ? 'unban-btn' : 'ban-btn'}" onclick="toggleBan('${p.telegram_id}', ${p.is_banned})">${p.is_banned ? 'Unban' : 'Ban'}</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  document.getElementById('player-search').oninput = e => {
+    _playerSearch = e.target.value;
+    _drawPlayersTable(el, _allPlayers);
+  };
+}
+
+async function toggleBan(tid, isBanned) {
+  // Normalize — onclick attrs may pass boolean or string
+  const banned = isBanned === true || isBanned === 'true';
+  if (!confirm(`${banned ? 'Unban' : 'Ban'} player #${tid}?`)) return;
+  try {
+    const { error } = await _sb.from('players').update({ is_banned: !banned }).eq('telegram_id', String(tid));
+    if (error) throw error;
+    // Log the action — ignore if admin_logs table not yet created
+    await _sb.from('admin_logs').insert({ action: banned ? 'unban' : 'ban', target_id: String(tid), notes: null, created_at: new Date().toISOString() }).catch(()=>{});
+    toast(banned ? `✅ Unbanned #${tid}` : `🚫 Banned #${tid}`);
+    await _renderPlayers(document.getElementById('tab-content'));
+  } catch(e) { toast('⚠️ Ban/Unban failed: ' + e.message); }
+}
+
+async function viewPlayer(tid) {
+  const [{ data: p }, { data: runs }, { data: refs }] = await Promise.all([
+    _sb.from('players').select('*').eq('telegram_id', String(tid)).single(),
+    _sb.from('run_logs').select('*').eq('telegram_id', String(tid)).order('created_at', { ascending: false }).limit(30),
+    _sb.from('referrals').select('referred_id,created_at').eq('referrer_id', String(tid)).order('created_at', { ascending: false }).limit(20),
+  ]);
+  if (!p) { toast('Player not found'); return; }
+
+  const playHours = ((p.total_play_time || 0) / 3600).toFixed(1);
+  const avgScore  = p.total_runs ? Math.round((runs||[]).reduce((s,r)=>s+(r.score||0),0) / Math.min((runs||[]).length,1)) : 0;
+  const wallet    = p.wallet_address || '—';
+  const shortWallet = wallet !== '—' ? wallet.slice(0,6)+'...'+wallet.slice(-4) : '—';
+
+  openModal(`👤 ${p.username || 'Unknown'} · #${p.telegram_id}`, `
+    <!-- Profile header -->
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;padding:14px;background:var(--glass);border-radius:var(--r2)">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--gold-dim);border:2px solid var(--gold-border);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">
+        ${p.photo_url ? `<img src="${p.photo_url}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.outerHTML='👤'"/>` : '👤'}
+      </div>
+      <div>
+        <div style="font-family:var(--fd);font-weight:800;font-size:1rem">${p.display_name || p.username || 'Unknown'}</div>
+        <div style="font-size:.75rem;color:var(--txt2)">@${p.username || '—'} · #${p.telegram_id}</div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          ${p.is_banned ? '<span class="badge badge-red">Banned</span>' : '<span class="badge badge-green">Active</span>'}
+          ${p.wallet_address ? '<span class="badge badge-gold">Wallet ✓</span>' : '<span class="badge badge-gray">No Wallet</span>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+      ${[
+        ['Best Score', (p.best_score||0).toLocaleString()],
+        ['Best Dist', (p.best_distance||0)+'m'],
+        ['Total Runs', (p.total_runs||0)],
+        ['Eggs Earned', (p.total_coins||0).toLocaleString()],
+        ['Eggs Now', (p.coins||0).toLocaleString()],
+        ['Play Time', playHours+'h'],
+        ['Referrals', p.referral_count||0],
+        ['Character', p.equipped_character||'—'],
+        ['Language', p.language_code||'—'],
+      ].map(([l,v]) => `<div style="background:var(--glass);border-radius:var(--r);padding:10px;text-align:center">
+        <div style="font-size:.6rem;color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">${l}</div>
+        <div style="font-family:var(--fd);font-weight:800;font-size:.88rem">${v}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Wallet -->
+    <div style="background:var(--glass);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:.65rem;color:var(--txt3);font-weight:700;letter-spacing:.08em">SOL WALLET</div>
+        <div style="font-family:monospace;font-size:.82rem;color:${p.wallet_address?'var(--gold)':'var(--txt3)'};margin-top:3px">${wallet}</div>
+      </div>
+      ${p.wallet_address ? `<button class="action-btn view-btn" onclick="navigator.clipboard?.writeText('${p.wallet_address}').then(()=>toast('✅ Wallet copied!'))">Copy</button>` : ''}
+    </div>
+
+    <!-- Last seen / joined -->
+    <div style="font-size:.72rem;color:var(--txt3);margin-bottom:14px">
+      Last seen: ${p.last_seen ? new Date(p.last_seen).toLocaleString() : '—'} · 
+      Captcha: ${p.captcha_done ? '✓' : '✗'}
+    </div>
+
+    <!-- JSON export -->
+    <details style="margin-bottom:14px">
+      <summary style="font-size:.78rem;color:var(--txt2);cursor:pointer;margin-bottom:6px">Raw JSON</summary>
+      <div class="json-pre">${JSON.stringify(p, null, 2)}</div>
+      <button class="copy-json-btn" onclick="navigator.clipboard?.writeText(JSON.stringify(${JSON.stringify(p)},null,2)).then(()=>toast('✅ JSON copied!'))">📋 Copy JSON</button>
+    </details>
+
+    <!-- Run history -->
+    <div style="font-family:var(--fd);font-size:.85rem;font-weight:700;color:var(--gold);margin-bottom:10px">
+      Run History (last ${(runs||[]).length})
+    </div>
+    <div class="log-list">
+      ${(runs||[]).map(r => `
+        <div class="log-item ${r.suspicious?'suspicious':'normal'}">
+          <div class="log-top">
+            <span class="log-id">Score: ${(r.score||0).toLocaleString()} · ${r.distance||0}m · ${r.coins||0} eggs · ${r.duration||0}s</span>
+            <span class="log-time">${new Date(r.created_at).toLocaleString()}</span>
+          </div>
+          ${r.suspicious ? `<div class="log-flags">⚠️ ${(r.flags||[]).join(', ') || 'flagged'}</div>` : ''}
+        </div>`).join('') || '<div style="color:var(--txt3);font-size:.82rem;padding:10px 0">No runs yet</div>'}
+    </div>
+
+    ${(refs||[]).length ? `
+    <div style="font-family:var(--fd);font-size:.85rem;font-weight:700;color:var(--gold);margin:14px 0 10px">
+      Referred Users (${refs.length})
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${refs.map(r => `<div style="display:flex;justify-content:space-between;font-size:.75rem;background:var(--glass);padding:8px 12px;border-radius:var(--r)">
+        <span style="font-family:monospace">#${r.referred_id}</span>
+        <span style="color:var(--txt3)">${new Date(r.created_at).toLocaleDateString()}</span>
+      </div>`).join('')}
+    </div>` : ''}`);
+}
+
+// ── LOGS TAB ──
+async function _renderLogs(el) {
+  const [{ data: allLogs }, { data: suspLogs }] = await Promise.all([
+    _sb.from('run_logs').select('*,players(username,display_name)').order('created_at', { ascending: false }).limit(100),
+    _sb.from('run_logs').select('*,players(username,display_name)').eq('suspicious', true).order('created_at', { ascending: false }).limit(50),
+  ]);
+
+  el.innerHTML = `
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div class="stat-card" style="flex:1;min-width:120px">
+        <div class="stat-card-label">Total Runs (last 100)</div>
+        <div class="stat-card-val">${(allLogs||[]).length}</div>
+      </div>
+      <div class="stat-card" style="flex:1;min-width:120px">
+        <div class="stat-card-label">Suspicious</div>
+        <div class="stat-card-val" style="color:var(--red)">${(suspLogs||[]).length}</div>
+      </div>
+    </div>
+    ${(suspLogs||[]).length ? `
+      <div style="font-family:var(--fd);font-size:.88rem;font-weight:700;color:var(--red);margin-bottom:10px">🚨 Suspicious Runs</div>
+      <div class="log-list" style="margin-bottom:24px">
+        ${(suspLogs||[]).map(r => `
+          <div class="log-item suspicious">
+            <div class="log-top">
+              <span class="log-id">#${r.telegram_id}</span>
+              <span class="log-time">${new Date(r.created_at).toLocaleString()}</span>
+            </div>
+            <div class="log-stats">${r.players?.username||'#'+r.telegram_id} · Score: ${(r.score||0).toLocaleString()} · Dist: ${r.distance||0}m · Eggs: ${r.coins||0} · ${r.duration||0}s</div>
+            <div class="log-flags">Flags: ${(r.flags||[]).join(', ') || '—'}</div>
+          </div>`).join('')}
+      </div>` : ''}
+    <div style="font-family:var(--fd);font-size:.88rem;font-weight:700;color:var(--txt);margin-bottom:10px">All Runs (last 100)</div>
+    <div class="log-list">
+      ${(allLogs||[]).map(r => `
+        <div class="log-item ${r.suspicious?'suspicious':'normal'}">
+          <div class="log-top">
+            <span class="log-id">${r.players?.username||r.players?.display_name||'#'+r.telegram_id} · Score: ${(r.score||0).toLocaleString()} · ${r.distance||0}m · ${r.coins||0} eggs · ${r.duration||0}s</span>
+            <span class="log-time">${new Date(r.created_at).toLocaleString()}</span>
+          </div>
+          ${r.suspicious ? `<div class="log-flags">⚠️ ${(r.flags||[]).join(', ')}</div>` : ''}
+        </div>`).join('')}
+    </div>`;
+}
+
+// ── REFERRALS TAB ──
+async function _renderReferrals(el) {
+  const { data: refs } = await _sb.from('referrals').select('*').order('created_at', { ascending: false }).limit(200);
+  const { data: players } = await _sb.from('players').select('telegram_id,username,referral_count').order('referral_count', { ascending: false }).limit(20);
+
+  el.innerHTML = `
+    <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+      <div class="stat-card" style="flex:1"><div class="stat-card-label">Total Referrals</div><div class="stat-card-val">${(refs||[]).length}</div></div>
+      <div class="stat-card" style="flex:1"><div class="stat-card-label">Top Referrers</div><div class="stat-card-val">${(players||[]).filter(p=>(p.referral_count||0)>0).length}</div></div>
+    </div>
+    <div style="font-family:var(--fd);font-size:.88rem;font-weight:700;color:var(--gold);margin-bottom:10px">Top Referrers</div>
+    <div class="table-wrap" style="margin-bottom:20px">
+      <table>
+        <thead><tr><th>Username</th><th>Telegram ID</th><th>Referrals</th></tr></thead>
+        <tbody>
+          ${(players||[]).filter(p=>(p.referral_count||0)>0).map(p => `
+            <tr>
+              <td><strong>${p.username||'Unknown'}</strong></td>
+              <td style="color:var(--txt3);font-family:monospace">${p.telegram_id}</td>
+              <td><span class="badge badge-gold">${p.referral_count}</span></td>
+            </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--txt3);padding:20px">No referrals yet</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-family:var(--fd);font-size:.88rem;font-weight:700;margin-bottom:10px">Recent Referral Events</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Referrer ID</th><th>New User ID</th><th>Date</th></tr></thead>
+        <tbody>
+          ${(refs||[]).slice(0,50).map(r => `
+            <tr>
+              <td style="font-family:monospace">${r.referrer_id}</td>
+              <td style="font-family:monospace">${r.referred_id}</td>
+              <td style="color:var(--txt3)">${new Date(r.created_at).toLocaleString()}</td>
+            </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--txt3);padding:20px">No referrals yet</td></tr>'}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ── SETTINGS TAB ──
+async function _renderSettings(el) {
+  // Load current setting
+  let refLocked = false;
+  try {
+    const { data: refSetting } = await _sb.from('admin_settings')
+      .select('value').eq('key','referral_lock').maybeSingle();
+    refLocked = refSetting?.value === 'true';
+  } catch(e) {
+    // Table may not exist yet - default to unlocked
+    console.warn('admin_settings table missing - run schema.sql first');
+  }
+
+  el.innerHTML = `
+    <div class="settings-panel">
+      <h3>🎮 Game Settings</h3>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label">Referral Lock</div>
+          <div class="setting-desc">When ON, players must invite 5 friends before playing. Currently: <strong style="color:${refLocked?'var(--red)':'var(--green)'}">${refLocked ? 'LOCKED' : 'UNLOCKED'}</strong></div>
+        </div>
+        <label class="tog">
+          <input type="checkbox" id="ref-lock-tog" ${refLocked ? 'checked' : ''}/>
+          <span class="tog-track"><span class="tog-thumb"></span></span>
+        </label>
+      </div>
+      <button class="save-btn" id="save-settings-btn">Save Settings</button>
+      <div id="save-status" style="font-size:.78rem;color:var(--green);margin-top:8px;min-height:18px"></div>
+    </div>
+
+    <div class="settings-panel">
+      <h3>📊 Database Actions</h3>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label">Reset Weekly Scores</div>
+          <div class="setting-desc">Delete run_logs older than 7 days (manual only — no auto-reset)</div>
+        </div>
+        <button class="action-btn ban-btn" onclick="resetWeekly()">Reset Weekly</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label" style="color:var(--red)">⚠️ Full Leaderboard Reset</div>
+          <div class="setting-desc">Wipe ALL run_logs and reset all scores to 0. Cannot be undone.</div>
+        </div>
+        <button class="action-btn ban-btn" onclick="resetFullLeaderboard()">FULL RESET</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label">Export All Players (JSON)</div>
+          <div class="setting-desc">Download full player database as JSON file</div>
+        </div>
+        <button class="action-btn view-btn" onclick="exportPlayers()">Export</button>
+      </div>
+      <div class="setting-row" style="margin-top:8px;padding-top:18px;border-top:1px solid rgba(248,113,113,.25);border-bottom:none">
+        <div class="setting-info">
+          <div class="setting-label" style="color:var(--red);font-size:.92rem">☢️ Clear ALL Data</div>
+          <div class="setting-desc">Permanently wipe <strong style="color:var(--red)">every table</strong> — players, run_logs, referrals, purchases, admin_logs. Irreversible.</div>
+        </div>
+        <button class="action-btn ban-btn" style="font-size:.68rem;padding:0 12px;height:30px;font-weight:800;letter-spacing:.03em" onclick="clearAllData()">☢️ WIPE DB</button>
+      </div>
+    </div>
+
+    <div class="settings-panel">
+      <h3>🔗 Links</h3>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label">Game WebApp</div>
+          <div class="setting-desc">${WEBAPP_LINK}</div>
+        </div>
+        <button class="action-btn view-btn" onclick="window.open('${WEBAPP_LINK}','_blank')">Open</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label">Supabase Dashboard</div>
+          <div class="setting-desc">vfxuxtisuhkrwxphsble.supabase.co</div>
+        </div>
+        <button class="action-btn view-btn" onclick="window.open('https://supabase.com/dashboard','_blank')">Open</button>
+      </div>
+    </div>`;
+
+  document.getElementById('save-settings-btn').onclick = async () => {
+    const btn = document.getElementById('save-settings-btn');
+    const status = document.getElementById('save-status');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      const locked = document.getElementById('ref-lock-tog').checked;
+      const { error: saveErr } = await _sb.from('admin_settings').upsert({ key: 'referral_lock', value: String(locked), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+      if (saveErr) throw saveErr;
+      status.textContent = `✅ Saved — Referral lock is now ${locked ? 'ON (locked)' : 'OFF (unlocked)'}`;
+      toast(`✅ Referral lock ${locked ? 'enabled' : 'disabled'}`);
+      setTimeout(() => _renderSettings(el), 800);
+    } catch(e) {
+      status.style.color = 'var(--red)';
+      status.textContent = '❌ Save failed: ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Settings';
+    }
+  };
+}
+
+async function resetWeekly() {
+  if (!confirm('Delete run_logs older than 7 days? This clears weekly scores.')) return;
+  try {
+    const weekAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+    const { error } = await _sb.from('run_logs').delete().lt('created_at', weekAgo);
+    if (error) throw error;
+    toast('✅ Weekly run logs cleared');
+    if (_activeTab === 'logs') _loadTab('logs');
+  } catch(e) { toast('⚠️ Failed: ' + e.message); }
+}
+
+async function resetFullLeaderboard() {
+  if (!confirm('⚠️ FULL RESET: Delete ALL run_logs and reset ALL player scores to 0? This cannot be undone!')) return;
+  if (!confirm('Are you 100% sure? This wipes the entire leaderboard.')) return;
+  try {
+    await _sb.from('run_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await _sb.from('players').update({ best_score: 0, best_distance: 0, total_runs: 0 }).neq('telegram_id','0');
+    toast('✅ Full leaderboard reset complete');
+    if (_activeTab === 'overview') _loadTab('overview');
+  } catch(e) { toast('⚠️ Failed: ' + e.message); }
+}
+
+async function clearSuspicious(logId) {
+  try {
+    await _sb.from('run_logs').update({ suspicious: false, flags: [] }).eq('id', logId);
+    toast('✅ Flag cleared');
+    _loadTab('logs');
+  } catch(e) { toast('⚠️ ' + e.message); }
+}
+
+async function exportPlayers() {
+  try {
+    const { data } = await _sb.from('players').select('*');
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `echick-players-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    toast('✅ Exported!');
+  } catch(e) { toast('⚠️ Failed: ' + e.message); }
+}
+
+// ── EDIT SCORE & DISTANCE ──
+function editScore(tid, username, currentScore, currentDist) {
+  currentDist = currentDist || 0;
+  window._scoreModeVal = 'set';
+  openModal(`✏️ Edit Score & Distance — ${username}`, `
+    <!-- Current stats row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px">
+      <div style="padding:12px 14px;background:rgba(245,200,66,.07);border:1px solid rgba(245,200,66,.15);border-radius:10px;font-size:.84rem">
+        <div style="color:var(--txt3);font-size:.7rem;margin-bottom:3px">Current Best Score</div>
+        <strong style="color:var(--gold);font-size:1.05rem">${currentScore.toLocaleString()}</strong>
+      </div>
+      <div style="padding:12px 14px;background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.15);border-radius:10px;font-size:.84rem">
+        <div style="color:var(--txt3);font-size:.7rem;margin-bottom:3px">Current Best Distance</div>
+        <strong style="color:var(--blue);font-size:1.05rem">${currentDist.toLocaleString()}m</strong>
+      </div>
+    </div>
+
+    <!-- Mode toggle -->
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button id="score-mode-set" onclick="scoreSetMode('set')"
+        style="flex:1;height:36px;border-radius:8px;font-weight:700;font-size:.8rem;background:rgba(245,200,66,.2);color:var(--gold);border:1px solid rgba(245,200,66,.35);cursor:pointer">
+        SET (overwrite)
+      </button>
+      <button id="score-mode-add" onclick="scoreSetMode('add')"
+        style="flex:1;height:36px;border-radius:8px;font-weight:700;font-size:.8rem;background:rgba(255,255,255,.05);color:var(--txt2);border:1px solid var(--border);cursor:pointer">
+        ADD (on top)
+      </button>
+    </div>
+    <div style="margin-bottom:14px;font-size:.75rem;color:var(--txt3)" id="score-mode-desc">SET overwrites the value exactly.</div>
+
+    <!-- Score input -->
+    <div style="font-size:.75rem;font-weight:600;color:var(--txt2);margin-bottom:5px">🏆 Score</div>
+    <input id="score-input" type="number" min="0" placeholder="Leave blank to keep current…"
+      style="width:100%;height:44px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:10px;padding:0 16px;font-size:.95rem;color:var(--txt);outline:none;margin-bottom:6px"/>
+    <div id="score-preview" style="font-size:.75rem;color:var(--txt3);margin-bottom:14px;min-height:16px"></div>
+
+    <!-- Distance input -->
+    <div style="font-size:.75rem;font-weight:600;color:var(--txt2);margin-bottom:5px">📏 Distance (m)</div>
+    <input id="dist-input" type="number" min="0" placeholder="Leave blank to keep current…"
+      style="width:100%;height:44px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:10px;padding:0 16px;font-size:.95rem;color:var(--txt);outline:none;margin-bottom:6px"/>
+    <div id="dist-preview" style="font-size:.75rem;color:var(--txt3);margin-bottom:16px;min-height:16px"></div>
+
+    <!-- Weekly note -->
+    <div style="padding:10px 12px;background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.15);border-radius:8px;font-size:.72rem;color:var(--txt2);margin-bottom:16px">
+      ✅ A run_log entry will also be inserted so the <strong>weekly leaderboard</strong> updates too.
+    </div>
+
+    <button onclick="applyScore('${tid}', ${currentScore}, ${currentDist})"
+      style="width:100%;height:44px;border-radius:999px;background:linear-gradient(135deg,var(--gold),var(--orange));
+             color:#09090f;font-family:var(--fd);font-weight:800;font-size:.88rem;cursor:pointer;letter-spacing:.04em">
+      Apply Changes
+    </button>
+    <div id="score-status" style="font-size:.78rem;text-align:center;margin-top:10px;min-height:18px"></div>
+  `);
+
+  function refreshPreviews() {
+    const mode = window._scoreModeVal || 'set';
+    const sv = parseInt(document.getElementById('score-input').value);
+    const dv = parseInt(document.getElementById('dist-input').value);
+    const sp = document.getElementById('score-preview');
+    const dp = document.getElementById('dist-preview');
+    if (!isNaN(sv) && sv >= 0) {
+      const fs = mode === 'set' ? sv : currentScore + sv;
+      sp.style.color = 'var(--gold)';
+      sp.textContent = mode === 'set'
+        ? `→ New best score: ${fs.toLocaleString()}`
+        : `→ ${currentScore.toLocaleString()} + ${sv.toLocaleString()} = ${fs.toLocaleString()}`;
+    } else { sp.textContent = ''; }
+    if (!isNaN(dv) && dv >= 0) {
+      const fd = mode === 'set' ? dv : currentDist + dv;
+      dp.style.color = 'var(--blue)';
+      dp.textContent = mode === 'set'
+        ? `→ New best distance: ${fd.toLocaleString()}m`
+        : `→ ${currentDist.toLocaleString()} + ${dv.toLocaleString()} = ${fd.toLocaleString()}m`;
+    } else { dp.textContent = ''; }
+  }
+
+  document.getElementById('score-input').addEventListener('input', refreshPreviews);
+  document.getElementById('dist-input').addEventListener('input', refreshPreviews);
+  window._editScoreRefresh = refreshPreviews;
+}
+
+window._scoreModeVal = 'set';
+function scoreSetMode(mode) {
+  window._scoreModeVal = mode;
+  const setBtn = document.getElementById('score-mode-set');
+  const addBtn = document.getElementById('score-mode-add');
+  const desc   = document.getElementById('score-mode-desc');
+  if (mode === 'set') {
+    setBtn.style.background = 'rgba(245,200,66,.2)'; setBtn.style.color = 'var(--gold)'; setBtn.style.borderColor = 'rgba(245,200,66,.35)';
+    addBtn.style.background = 'rgba(255,255,255,.05)'; addBtn.style.color = 'var(--txt2)'; addBtn.style.borderColor = 'var(--border)';
+    desc.textContent = 'SET overwrites the value exactly.';
+  } else {
+    addBtn.style.background = 'rgba(96,165,250,.2)'; addBtn.style.color = 'var(--blue)'; addBtn.style.borderColor = 'rgba(96,165,250,.35)';
+    setBtn.style.background = 'rgba(255,255,255,.05)'; setBtn.style.color = 'var(--txt2)'; setBtn.style.borderColor = 'var(--border)';
+    desc.textContent = 'ADD puts the value on top of what they already have.';
+  }
+  if (window._editScoreRefresh) window._editScoreRefresh();
+}
+
+async function applyScore(tid, currentScore, currentDist) {
+  const mode    = window._scoreModeVal || 'set';
+  const rawS    = document.getElementById('score-input').value.trim();
+  const rawD    = document.getElementById('dist-input').value.trim();
+  const status  = document.getElementById('score-status');
+
+  const scoreVal = rawS !== '' ? parseInt(rawS) : null;
+  const distVal  = rawD !== '' ? parseInt(rawD) : null;
+
+  if (scoreVal === null && distVal === null) {
+    status.style.color = 'var(--red)';
+    status.textContent = '❌ Enter at least a score or distance value.';
+    return;
+  }
+  if ((scoreVal !== null && (isNaN(scoreVal) || scoreVal < 0)) ||
+      (distVal  !== null && (isNaN(distVal)  || distVal  < 0))) {
+    status.style.color = 'var(--red)';
+    status.textContent = '❌ Values must be positive numbers.';
+    return;
+  }
+
+  const finalScore = scoreVal !== null ? (mode === 'set' ? scoreVal : currentScore + scoreVal) : currentScore;
+  const finalDist  = distVal  !== null ? (mode === 'set' ? distVal  : currentDist  + distVal)  : currentDist;
+
+  const summary = [];
+  if (scoreVal !== null) summary.push(`Score: ${currentScore.toLocaleString()} → ${finalScore.toLocaleString()}`);
+  if (distVal  !== null) summary.push(`Distance: ${currentDist.toLocaleString()}m → ${finalDist.toLocaleString()}m`);
+  if (!confirm(`Apply to #${tid}?\n\n${summary.join('\n')}\n\nThis also inserts a run_log so weekly leaderboard updates.`)) return;
+
+  const applyBtn = document.querySelector(`[onclick="applyScore('${tid}', ${currentScore}, ${currentDist})"]`);
+  if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Saving…'; }
+  status.style.color = 'var(--txt3)';
+  status.textContent = 'Saving…';
+
+  try {
+    // 1. Update players table
+    const playerUpdate = {};
+    if (scoreVal !== null) playerUpdate.best_score    = finalScore;
+    if (distVal  !== null) playerUpdate.best_distance = finalDist;
+
+    const { error: pErr } = await _sb.from('players').update(playerUpdate).eq('telegram_id', String(tid));
+    if (pErr) throw new Error('players: ' + pErr.message);
+
+    // 2. Insert a run_log so weekly leaderboard reflects it
+    const { error: rErr } = await _sb.from('run_logs').insert({
+      telegram_id: String(tid),
+      score:       finalScore,
+      coins:       0,
+      distance:    finalDist,
+      duration:    0,
+      suspicious:  false,
+      flags:       [],
+      session_id:  'admin-manual-' + Date.now(),
+      sig:         'admin',
+      created_at:  new Date().toISOString(),
+    });
+    if (rErr) throw new Error('run_logs: ' + rErr.message);
+
+    // 3. Log in admin_logs
+    await _sb.from('admin_logs').insert({
+      action:    'manual_score',
+      target_id: String(tid),
+      notes:     `mode=${mode} score=${finalScore}(was ${currentScore}) dist=${finalDist}(was ${currentDist})`,
+      created_at: new Date().toISOString(),
+    });
+
+    status.style.color = 'var(--green)';
+    status.textContent = `✅ Updated! Score: ${finalScore.toLocaleString()} · Dist: ${finalDist.toLocaleString()}m`;
+    toast(`✅ Score & distance updated for #${tid}`);
+    if (_activeTab === 'players') setTimeout(() => _loadTab('players'), 800);
+    setTimeout(() => closeModal(), 1600);
+  } catch(e) {
+    status.style.color = 'var(--red)';
+    status.textContent = '❌ Failed: ' + e.message;
+    console.error('applyScore error:', e);
+    if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = 'Apply Changes'; }
+  }
+}
+
+// ── CLEAR ALL DATA ──
+async function clearAllData() {
+  if (!confirm('☢️ CLEAR ALL DATA\n\nThis will permanently delete:\n• ALL players\n• ALL run logs\n• ALL referrals\n• ALL purchases\n• ALL admin logs\n\nThis CANNOT be undone. Continue?')) return;
+  if (!confirm('⚠️ Final warning.\n\nAre you absolutely sure you want to wipe the entire database?')) return;
+  const code = prompt('Type  DELETE EVERYTHING  to confirm:');
+  if (code !== 'DELETE EVERYTHING') { toast('❌ Cancelled — text did not match.'); return; }
+
+  const btn = document.querySelector('[onclick="clearAllData()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Wiping…'; }
+
+  try {
+    // Delete child tables first (FK constraints: run_logs references players)
+    // All tables use BIGSERIAL `id` as PK — delete where id > 0 wipes everything
+    const tables = ['run_logs', 'referrals', 'purchases', 'admin_logs', 'players'];
+    for (const tbl of tables) {
+      const { error } = await _sb.from(tbl).delete().gt('id', 0);
+      if (error) throw new Error(`${tbl}: ${error.message}`);
+    }
+    toast('✅ All data wiped successfully.');
+    setTimeout(() => _loadTab('overview'), 1200);
+  } catch(e) {
+    toast('⚠️ Wipe failed: ' + e.message);
+    console.error('clearAllData error:', e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '☢️ WIPE DB'; }
+  }
+}
+
+// ── MODAL ──
+function openModal(title, body) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = `<button class="modal-close" onclick="closeModal()">✕</button>` + body;
+  document.getElementById('modal').classList.remove('hidden');
+}
+function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+
+// Make functions globally accessible for inline onclick
+window.toggleBan = toggleBan;
+window.viewPlayer = viewPlayer;
+window.resetWeekly = resetWeekly;
+window.resetFullLeaderboard = resetFullLeaderboard;
+window.exportPlayers = exportPlayers;
+window.clearSuspicious = clearSuspicious;
+window.editScore    = editScore;
+window.scoreSetMode = scoreSetMode;
+window.applyScore   = applyScore;
+window.clearAllData = clearAllData;
+window.closeModal = closeModal;
+window.openModal = openModal;
+</script>
+</body>
+</html>
